@@ -1,0 +1,33 @@
+{
+  "analysis_id": "test-004",
+  "source_environment": "Jira Data Center",
+  "target_environment": "Jira Cloud",
+  "analysis_date": "2025-03-27",
+  "components": [
+    {
+      "component_id": "comp-004",
+      "component_type": "script",
+      "plugin": "ScriptRunner",
+      "location": {
+        "workflow": "Bug Workflow",
+        "transition": "Done",
+        "file_path": ""
+      },
+      "features_detected": [
+        "component_accessor",
+        "custom_field_manager",
+        "issue_manager_access",
+        "user_manager_access",
+        "comment_creation",
+        "username_identifier"
+      ],
+      "compatibility": {
+        "cloud_status": "partial",
+        "risk_level": "high"
+      },
+      "recommended_action": "Translate to Jira Cloud REST API and accountId usage",
+      "report_text": "This script updates a custom field and adds a comment when an issue is transitioned.",
+      "original_script": "import com.atlassian.jira.component.ComponentAccessor\ndef issueManager = ComponentAccessor.getIssueManager()\ndef issue = issueManager.getIssueByCurrentKey('TEST-1')\nlog.info(issue.summary)"
+    }
+  ]
+}

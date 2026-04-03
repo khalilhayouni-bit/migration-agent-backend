@@ -1,0 +1,35 @@
+{
+  "analysis_id": "test-005",
+  "source_environment": "Jira Data Center",
+  "target_environment": "Jira Cloud",
+  "analysis_date": "2025-03-27",
+  "components": [
+    {
+      "component_id": "comp-005",
+      "component_type": "post_function",
+      "plugin": "ScriptRunner",
+      "location": {
+        "workflow": "Change Request Workflow",
+        "transition": "Approve Change",
+        "file_path": ""
+      },
+      "features_detected": [
+        "component_accessor",
+        "issue_manager_access",
+        "custom_field_manager",
+        "comment_manager",
+        "user_manager_access",
+        "linked_issue_access",
+        "username_identifier",
+        "issue_update"
+      ],
+      "compatibility": {
+        "cloud_status": "partial",
+        "risk_level": "critical"
+      },
+      "recommended_action": "Rewrite using Jira Cloud REST APIs, accountId, and linked issue expansion",
+      "report_text": "This post-function fetches a linked issue, copies a custom field value from it, updates the current issue, and adds a comment.",
+      "original_script": "import com.atlassian.jira.component.ComponentAccessor\nimport com.atlassian.jira.issue.link.IssueLinkManager\n\nIssueLinkManager issueLinkManager = ComponentAccessor.getIssueLinkManager()\ndef customFieldManager = ComponentAccessor.getCustomFieldManager()\ndef commentManager = ComponentAccessor.getCommentManager()\ndef userManager = ComponentAccessor.getUserManager()\ndef issueManager = ComponentAccessor.getIssueManager()\n\ndef currentIssue = issue\n\ndef linkedIssues = issueLinkManager.getOutwardLinks(currentIssue.id)\nif (linkedIssues.size() > 0) {\n    def linkedIssue = linkedIssues[0].destinationObject\n\n    def sourceCf = customFieldManager.getCustomFieldObjectByName('Business Impact')\n    def targetCf = customFieldManager.getCustomFieldObjectByName('Approval Notes')\n\n    def sourceValue = linkedIssue.getCustomFieldValue(sourceCf)\n    currentIssue.setCustomFieldValue(targetCf, sourceValue)\n\n    def user = userManager.getUserByName('admin')\n    commentManager.create(currentIssue, user, 'Approval Notes copied from linked issue ' + linkedIssue.key, true)\n\n    issueManager.updateIssue(user, currentIssue, com.atlassian.jira.event.type.EventDispatchOption.DO_NOT_DISPATCH, false)\n}"
+    }
+  ]
+}

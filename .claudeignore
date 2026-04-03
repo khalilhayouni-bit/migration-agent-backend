@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+venv/
+outputs/
+.env
+hard_test.json
+test.json
+test2.json
+test3.json
+pyvenv.cfg
+.gitignore

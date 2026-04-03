@@ -1,0 +1,97 @@
+{
+  "analysis_id": "pfe-demo-001",
+  "source_environment": "Jira DC 9.4",
+  "target_environment": "Jira Cloud",
+  "analysis_date": "2026-04-01",
+  "components": [
+    {
+      "component_id": "SR-001",
+      "component_type": "post_function",
+      "plugin": "ScriptRunner",
+      "location": {
+        "workflow": "Bug Workflow",
+        "transition": "Resolve Issue"
+      },
+      "features_detected": [
+        "ComponentAccessor",
+        "IssueManager",
+        "UserManager",
+        "CustomFieldManager"
+      ],
+      "compatibility": {
+        "cloud_status": "partial",
+        "risk_level": "high"
+      },
+      "recommended_action": "Rewrite using Jira Cloud REST API v3 and ScriptRunner Cloud Groovy",
+      "report_text": "Script uses ComponentAccessor to fetch the IssueManager and UserManager, both of which are DC-only Java APIs. It also reads a custom field value by name using CustomFieldManager, then reassigns the issue to a user looked up by username. All four APIs are unavailable in Cloud.",
+      "original_script": "import com.atlassian.jira.component.ComponentAccessor\nimport com.atlassian.jira.issue.MutableIssue\n\ndef issueManager = ComponentAccessor.getIssueManager()\ndef userManager = ComponentAccessor.getUserManager()\ndef customFieldManager = ComponentAccessor.getCustomFieldManager()\n\ndef issue = issueManager.getIssueObject('BUG-42')\ndef customField = customFieldManager.getCustomFieldObjectByName('Team Lead')\ndef teamLead = customField ? issue.getCustomFieldValue(customField) : null\n\nif (teamLead) {\n    def user = userManager.getUserByName(teamLead.toString())\n    if (user) {\n        issue.setAssignee(user)\n        issueManager.updateIssue(ComponentAccessor.jiraAuthenticationContext.loggedInUser, issue, com.atlassian.jira.event.type.EventDispatchOption.DO_NOT_DISPATCH, false)\n    }\n}"
+    },
+    {
+      "component_id": "JSU-002",
+      "component_type": "workflow_validator",
+      "plugin": "JSU",
+      "location": {
+        "workflow": "Change Request Workflow",
+        "transition": "Approve"
+      },
+      "features_detected": [
+        "FieldsRequiredValidator",
+        "UserInGroupValidator",
+        "CustomFieldValue"
+      ],
+      "compatibility": {
+        "cloud_status": "partial",
+        "risk_level": "medium"
+      },
+      "recommended_action": "Translate JSU validators to ScriptRunner Cloud Groovy validators",
+      "report_text": "Component uses two JSU validators: FieldsRequiredValidator ensures 'Approver' and 'Business Justification' fields are populated before the Approve transition, and UserInGroupValidator checks the current user is in the 'change-managers' group. JSU is not available on Cloud; these must be rewritten as ScriptRunner Cloud validators.",
+      "original_script": "// JSU configuration (XML-based, not Groovy):\n// Validator 1: FieldsRequiredValidator\n//   fields: Approver, Business Justification\n//   error: 'Approver and Business Justification must be filled before approval'\n//\n// Validator 2: UserInGroupValidator\n//   group: change-managers\n//   error: 'Only members of change-managers group can approve this request'"
+    },
+    {
+      "component_id": "WH-003",
+      "component_type": "listener",
+      "plugin": "Webhook",
+      "location": {
+        "workflow": null,
+        "transition": null,
+        "file_path": "listeners/issue_created_notify.groovy"
+      },
+      "features_detected": [
+        "IssueCreatedEvent",
+        "HTTP POST",
+        "BasicAuth",
+        "IssueEventListener"
+      ],
+      "compatibility": {
+        "cloud_status": "partial",
+        "risk_level": "medium"
+      },
+      "recommended_action": "Rewrite as a Python webhook receiver using Jira Cloud webhook registration via REST API",
+      "report_text": "DC listener fires on IssueCreatedEvent and POSTs a custom payload to an internal Slack-compatible endpoint. Uses BasicAuth with a service account. In Cloud, this should be a registered webhook via /rest/api/3/webhook that sends to an external receiver; the receiver is rewritten in Python.",
+      "original_script": "import com.atlassian.jira.event.issue.IssueEvent\nimport com.atlassian.jira.event.type.EventType\nimport groovyx.net.http.HTTPBuilder\nimport static groovyx.net.http.Method.POST\nimport static groovyx.net.http.ContentType.JSON\n\ndef issue = event.issue\nif (event.eventTypeId == EventType.ISSUE_CREATED_ID) {\n    def http = new HTTPBuilder('https://hooks.internal.example.com')\n    http.auth.basic('svc-jira', 'secret123')\n    http.request(POST, JSON) { req ->\n        uri.path = '/jira-events'\n        body = [\n            event: 'issue_created',\n            key: issue.key,\n            summary: issue.summary,\n            reporter: issue.reporterUser?.name,\n            project: issue.projectObject.key\n        ]\n    }\n}"
+    },
+    {
+      "component_id": "AUTO-004",
+      "component_type": "script",
+      "plugin": "native",
+      "location": {
+        "workflow": "Incident Workflow",
+        "transition": null
+      },
+      "features_detected": [
+        "IssueCreatedTrigger",
+        "FieldCondition",
+        "AssignToUserAction",
+        "SendEmailAction",
+        "DC-specific trigger syntax"
+      ],
+      "compatibility": {
+        "cloud_status": "partial",
+        "risk_level": "high"
+      },
+      "recommended_action": "Translate DC automation rule to Jira Cloud Automation JSON format",
+      "report_text": "Native DC automation rule: when an issue is created in the OPS project with Priority = Critical, assign it to user 'oncall-engineer' and send an email notification. DC rule uses legacy XML-based trigger syntax and username-based assignment which do not exist in Cloud Automation.",
+      "original_script": "<!-- DC Automation Rule (XML) -->\n<rule name='Auto-assign Critical Incidents'>\n  <trigger type='issue_created'>\n    <project>OPS</project>\n  </trigger>\n  <condition type='field_value'>\n    <field>priority</field>\n    <value>Critical</value>\n  </condition>\n  <action type='assign_issue'>\n    <username>oncall-engineer</username>\n  </action>\n  <action type='send_email'>\n    <to>oncall@example.com</to>\n    <subject>Critical incident created: {{issue.key}}</subject>\n    <body>A critical incident {{issue.key}} was created. Please respond immediately.</body>\n  </action>\n</rule>"
+    }
+  ]
+}

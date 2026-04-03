@@ -1,0 +1,26 @@
+{
+  "analysis_id": "test-001",
+  "source_environment": "Jira Data Center",
+  "target_environment": "Jira Cloud",
+  "analysis_date": "2025-03-27",
+  "components": [
+    {
+      "component_id": "comp-001",
+      "component_type": "script",
+      "plugin": "ScriptRunner",
+      "location": {
+        "workflow": "Software Development",
+        "transition": "In Progress",
+        "file_path": null
+      },
+      "features_detected": ["component_accessor", "issue_manager_access", "username_identifier"],
+      "compatibility": {
+        "cloud_status": "incompatible",
+        "risk_level": "high"
+      },
+      "recommended_action": "Rewrite using ScriptRunner Cloud REST API",
+      "report_text": "This script uses ComponentAccessor which is not available in Cloud.",
+      "original_script": "import com.atlassian.jira.component.ComponentAccessor\ndef issueManager = ComponentAccessor.getIssueManager()\ndef issue = issueManager.getIssueByCurrentKey('TEST-1')\nlog.info(issue.summary)"
+    }
+  ]
+}

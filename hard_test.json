@@ -1,0 +1,126 @@
+{
+  "name": "hard_test.json",
+  "size": "4 KB",
+  "total": 8,
+  "review": 3,
+  "incompat": 2,
+  "components": [
+    {
+      "component_id": "comp-001",
+      "component_type": "post_function",
+      "plugin": "ScriptRunner",
+      "location": {
+        "workflow": "Software Development",
+        "transition": "Deploy to Production",
+        "file_path": null
+      },
+      "features_detected": [
+        "component_accessor",
+        "issue_manager_access",
+        "custom_field_manager",
+        "user_manager_access",
+        "email_handler"
+      ],
+      "compatibility": {
+        "cloud_status": "partial",
+        "risk_level": "high"
+      },
+      "recommended_action": "Rewrite using ScriptRunner Cloud REST API and Jira Cloud custom field API",
+      "report_text": "Uses ComponentAccessor, CustomFieldManager and email sending — all unavailable in Cloud.",
+      "original_script": "import com.atlassian.jira.component.ComponentAccessor\nimport com.atlassian.jira.event.type.EventDispatchOption\n\ndef customFieldManager = ComponentAccessor.getCustomFieldManager()\ndef userManager = ComponentAccessor.getUserManager()\ndef mailServer = ComponentAccessor.getMailServerManager().getDefaultSMTPMailServer()\n\ndef issue = event.issue\ndef cf = customFieldManager.getCustomFieldObjectByName('Deploy Approver')\ndef approver = issue.getCustomFieldValue(cf)\n\nif (approver) {\n    mailServer.send(approver.emailAddress, 'Deployment approved', \"Issue ${issue.key} is ready for production.\")\n}\n\nissue.setCustomFieldValue(cf, null)\nComponentAccessor.getIssueManager().updateIssue(userManager.getUserByName('admin'), issue, EventDispatchOption.DO_NOT_DISPATCH, false)"
+    },
+    {
+      "component_id": "comp-002",
+      "component_type": "workflow_validator",
+      "plugin": "JSU",
+      "location": {
+        "workflow": "Bug Tracking",
+        "transition": "Close Issue",
+        "file_path": null
+      },
+      "features_detected": [
+        "field_validation",
+        "regex_check",
+        "multi_condition"
+      ],
+      "compatibility": {
+        "cloud_status": "partial",
+        "risk_level": "medium"
+      },
+      "recommended_action": "Migrate to JSU Cloud validator with equivalent field condition rules",
+      "report_text": "JSU multi-field validator with regex — partially supported in Cloud.",
+      "original_script": "field.name == 'Resolution' && field.value matches '^(Fixed|Won\\'t Fix|Duplicate)$' && cf['Story Points'].value > 0 && assignee != null"
+    },
+    {
+      "component_id": "comp-003",
+      "component_type": "script",
+      "plugin": "ScriptRunner",
+      "location": {
+        "workflow": "HR Onboarding",
+        "transition": "Approve",
+        "file_path": null
+      },
+      "features_detected": [
+        "database_access",
+        "filesystem_access",
+        "groovy_sql"
+      ],
+      "compatibility": {
+        "cloud_status": "incompatible",
+        "risk_level": "critical"
+      },
+      "recommended_action": "Cannot migrate — direct DB and filesystem access not available in Jira Cloud",
+      "report_text": "Script uses groovy.sql.Sql for direct database queries and File I/O — both completely blocked in Cloud sandbox.",
+      "original_script": "import groovy.sql.Sql\nimport java.nio.file.Files\nimport java.nio.file.Paths\n\ndef sql = Sql.newInstance('jdbc:postgresql://internal-db:5432/jira', 'jira_user', 'secret', 'org.postgresql.Driver')\ndef rows = sql.rows('SELECT assignee_id, count(*) as total FROM issues WHERE project = ? GROUP BY assignee_id', ['HR'])\n\nrows.each { row ->\n    def reportPath = Paths.get(\"/var/reports/hr_${row.assignee_id}.txt\")\n    Files.write(reportPath, \"Assignee ${row.assignee_id} has ${row.total} issues\".bytes)\n}\nsql.close()"
+    },
+    {
+      "component_id": "comp-004",
+      "component_type": "listener",
+      "plugin": "Webhook",
+      "location": {
+        "workflow": "DevOps Pipeline",
+        "transition": null,
+        "file_path": null
+      },
+      "features_detected": [
+        "http_post",
+        "json_payload",
+        "auth_header",
+        "retry_logic"
+      ],
+      "compatibility": {
+        "cloud_status": "compatible",
+        "risk_level": "low"
+      },
+      "recommended_action": "Migrate to Jira Cloud outgoing webhook with equivalent payload",
+      "report_text": "Standard outgoing webhook with auth header and retry — fully migratable.",
+      "original_script": "import groovy.json.JsonBuilder\nimport java.net.http.HttpClient\nimport java.net.http.HttpRequest\nimport java.net.http.HttpResponse\n\ndef payload = new JsonBuilder([\n    issueKey: issue.key,\n    status: issue.status.name,\n    assignee: issue.assignee?.name,\n    priority: issue.priority.name,\n    timestamp: new Date().toInstant().toString()\n]).toString()\n\ndef client = HttpClient.newHttpClient()\ndef request = HttpRequest.newBuilder()\n    .uri(URI.create('https://hooks.internal.example.com/jira-events'))\n    .header('Content-Type', 'application/json')\n    .header('Authorization', 'Bearer ${SECRET_TOKEN}')\n    .POST(HttpRequest.BodyPublishers.ofString(payload))\n    .build()\n\ndef response = client.send(request, HttpResponse.BodyHandlers.ofString())\nif (response.statusCode() >= 500) {\n    Thread.sleep(2000)\n    client.send(request, HttpResponse.BodyHandlers.ofString())\n}"
+    },
+    {
+      "component_id": "comp-005",
+      "component_type": "post_function",
+      "plugin": "native",
+      "location": {
+        "workflow": "Release Management",
+        "transition": "Mark Released",
+        "file_path": null
+      },
+      "features_detected": [
+        "automation_trigger",
+        "condition_branch",
+        "field_update",
+        "subtask_update"
+      ],
+      "compatibility": {
+        "cloud_status": "compatible",
+        "risk_level": "low"
+      },
+      "recommended_action": "Migrate to Jira Cloud Automation rule with equivalent trigger and actions",
+      "report_text": "Native automation rule — fully compatible with Jira Cloud Automation.",
+      "original_script": "{\n  \"trigger\": \"transition\",\n  \"conditions\": [{\"type\": \"issue-fields-condition\", \"field\": \"issuetype\", \"value\": \"Release\"}],\n  \"actions\": [\n    {\"type\": \"edit-issue\", \"fields\": {\"fixVersions\": \"{{now|date('yyyy-MM-dd')}}\"}},\n    {\"type\": \"branch\", \"selector\": \"subtasks\", \"actions\": [\n      {\"type\": \"transition-issue\", \"transition\": \"Done\"}\n    ]}\n  ]\n}"
+    }
+
+
+    
+  ]
+}
