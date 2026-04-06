@@ -4,7 +4,14 @@ from google import genai
 from app.config import settings
 from app.models import Component, TranslationResult
 
-client = genai.Client(api_key=settings.gemini_api_key)
+_client: genai.Client | None = None
+
+def _get_client() -> genai.Client:
+    """Return a cached Gemini client, created on first use so the key is read fresh."""
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=settings.gemini_api_key)
+    return _client
 
 RAG_INJECTION_MARKER = "## Original script"
 
@@ -56,18 +63,42 @@ def _format_rag_context(chunks: list[dict]) -> str:
 
 
 def _extract_json(text: str) -> dict:
-    """Extract a JSON object from Gemini's response, stripping fences if present."""
+    """Extract a JSON object from Gemini's response.
+
+    Handles three common Gemini output patterns:
+    - Raw JSON (ideal case)
+    - JSON wrapped in ```json ... ``` fences
+    - JSON preceded/followed by explanation text (preamble or postamble)
+    """
     cleaned = text.strip()
+
+    # Strip outermost markdown fences if present
     cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned)
     cleaned = re.sub(r'\n?```\s*$', '', cleaned)
     cleaned = cleaned.strip()
-    return json.loads(cleaned)
+
+    # Try direct parse first (fast path)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # Gemini returned preamble/postamble around the JSON — find the object boundaries
+    start = cleaned.find('{')
+    end = cleaned.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        return json.loads(cleaned[start:end + 1])
+
+    raise json.JSONDecodeError("No JSON object found in response", cleaned, 0)
 
 
 class BaseAgent:
     def __init__(self):
-        self.client = client
         self.model = "gemini-2.5-flash"
+
+    @property
+    def client(self) -> genai.Client:
+        return _get_client()
 
     def build_prompt(self, component: Component) -> str:
         raise NotImplementedError("Each agent must implement build_prompt()")
@@ -137,9 +168,10 @@ class BaseAgent:
             raw = self._call_gemini(prompt)
             parsed = _extract_json(raw)
             return TranslationResult(**parsed)
-        except (json.JSONDecodeError, ValueError):
-            pass  # First attempt failed, retry below
-        except Exception:
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"[Agent] {component.component_id} parse attempt 1 failed ({type(e).__name__}): {e}")
+        except Exception as e:
+            print(f"[Agent] {component.component_id} attempt 1 error ({type(e).__name__}): {e}")
             return FALLBACK_RESULT
 
         # Retry with reinforcement message
@@ -148,7 +180,8 @@ class BaseAgent:
             raw = self._call_gemini(retry_prompt)
             parsed = _extract_json(raw)
             return TranslationResult(**parsed)
-        except Exception:
+        except Exception as e:
+            print(f"[Agent] {component.component_id} attempt 2 error ({type(e).__name__}): {e}")
             return FALLBACK_RESULT
 
     def _check_translation_memory(self, component: Component) -> TranslationResult | None:

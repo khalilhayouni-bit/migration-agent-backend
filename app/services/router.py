@@ -23,7 +23,7 @@ def route_components(report: AnalysisReport) -> list[dict]:
         if agent is None:
             agent = MiscAgent()
 
-        print(f"[Router] Processing component '{component.component_id}' → {component.plugin.value}")
+        print(f"[Router] Processing component '{component.component_id}' -> {component.plugin.value}")
 
         result = agent.translate(component)
         results.append(result)
@@ -35,7 +35,7 @@ def route_components_stream(report: AnalysisReport) -> Generator[dict, None, Non
     for index, component in enumerate(report.components):
         agent = AGENT_MAP.get(component.plugin) or MiscAgent()
 
-        print(f"[Router] Processing component '{component.component_id}' → {component.plugin.value}")
+        print(f"[Router] Processing component '{component.component_id}' -> {component.plugin.value}")
 
         # Signal to frontend: this component is now running
         yield {
