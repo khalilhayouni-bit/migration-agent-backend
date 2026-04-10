@@ -50,8 +50,8 @@ def generate_report_md(valid: list[dict], flagged: list[dict], analysis_id: str)
     if all_components:
         lines.append("## Components Summary")
         lines.append("")
-        lines.append("| Component | Type | Plugin | Status | Confidence | Source |")
-        lines.append("|-----------|------|--------|--------|------------|--------|")
+        lines.append("| Component | Type | Plugin | Status | Confidence | Source | Reviewer |")
+        lines.append("|-----------|------|--------|--------|------------|--------|----------|")
         for r in all_components:
             comp_id = r.get("component_id", "?")
             comp_type = r.get("component_type", "?")
@@ -64,7 +64,8 @@ def generate_report_md(valid: list[dict], flagged: list[dict], analysis_id: str)
                 source_col = f"cached ({similarity:.2f})"
             else:
                 source_col = "generated"
-            lines.append(f"| {comp_id} | {comp_type} | {plugin} | {status} | {confidence:.2f} ({label}) | {source_col} |")
+            reviewer_col = "corrected" if r.get("reviewer_corrected") else "\u2014"
+            lines.append(f"| {comp_id} | {comp_type} | {plugin} | {status} | {confidence:.2f} ({label}) | {source_col} | {reviewer_col} |")
         lines.append("")
 
     if valid:
@@ -132,6 +133,21 @@ def generate_report_md(valid: list[dict], flagged: list[dict], analysis_id: str)
             for warning in r["cache_warnings"]:
                 lines.append(f"- {warning}")
             lines.append("")
+
+    # --- Reviewer corrections section ---
+    reviewer_corrected = [r for r in all_components if r.get("reviewer_corrected")]
+    if reviewer_corrected:
+        lines.append("## Reviewer Corrections")
+        lines.append("")
+        lines.append("The following components were revised by the self-critique reviewer:")
+        lines.append("")
+        for r in reviewer_corrected:
+            comp_id = r.get("component_id", "?")
+            confidence = r.get("confidence", 0.0)
+            label = r.get("confidence_label", "low")
+            notes = r.get("notes", "")
+            lines.append(f"- **{comp_id}** — confidence: {confidence:.2f} ({label}) — {notes}")
+        lines.append("")
 
     return "\n".join(lines)
 

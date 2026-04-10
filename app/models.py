@@ -65,6 +65,7 @@ class TranslationResult(BaseModel):
     served_from_cache: bool = False
     cache_similarity: Optional[float] = None
     cache_warnings: List[str] = []
+    reviewer_corrected: bool = False
 
     @model_validator(mode="after")
     def compute_confidence_label(self) -> "TranslationResult":

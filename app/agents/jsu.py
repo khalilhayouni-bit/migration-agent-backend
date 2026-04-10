@@ -1,4 +1,4 @@
-from app.agents.base_agent import BaseAgent, JSON_OUTPUT_INSTRUCTIONS
+from app.agents.base_agent import BaseAgent
 from app.models import Component
 
 class JSUAgent(BaseAgent):
@@ -28,7 +28,5 @@ Your task is to translate a JSU workflow component from Jira Data Center to Jira
 - If the JSU feature has a native Jira Cloud equivalent, use that instead
 - Use accountId for all user references
 - If migration is not possible, return a Groovy comment block explaining what needs manual reconfiguration
-- The translated_script field in your JSON response must contain valid Groovy code
-
-{JSON_OUTPUT_INSTRUCTIONS}
+- The translated_script field must contain valid Groovy code
 """

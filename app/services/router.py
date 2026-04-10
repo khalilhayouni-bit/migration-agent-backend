@@ -1,9 +1,11 @@
+import asyncio
+from typing import Generator
+
 from app.models import AnalysisReport, Plugin
 from app.agents.scriptrunner import ScriptRunnerAgent
 from app.agents.jsu import JSUAgent
 from app.agents.automation import AutomationAgent
 from app.agents.misc import MiscAgent
-
 from app.agents.webhook import WebhookAgent
 
 AGENT_MAP = {
@@ -14,22 +16,18 @@ AGENT_MAP = {
     Plugin.misc: MiscAgent(),
 }
 
-def route_components(report: AnalysisReport) -> list[dict]:
-    results = []
+_misc_fallback = MiscAgent()
 
+
+async def route_components(report: AnalysisReport) -> list[dict]:
+    tasks = []
     for component in report.components:
-        agent = AGENT_MAP.get(component.plugin)
+        agent = AGENT_MAP.get(component.plugin, _misc_fallback)
+        print(f"[Router] Queuing component '{component.component_id}' -> {component.plugin.value}")
+        tasks.append(agent.async_translate(component))
 
-        if agent is None:
-            agent = MiscAgent()
-
-        print(f"[Router] Processing component '{component.component_id}' -> {component.plugin.value}")
-
-        result = agent.translate(component)
-        results.append(result)
-
-    return results
-from typing import Generator
+    results = await asyncio.gather(*tasks)
+    return list(results)
 
 def route_components_stream(report: AnalysisReport) -> Generator[dict, None, None]:
     for index, component in enumerate(report.components):

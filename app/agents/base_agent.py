@@ -1,8 +1,14 @@
-import re
 import json
+import time
+import asyncio
+from typing import TypedDict
 from google import genai
+from google.genai import types
 from app.config import settings
-from app.models import Component, TranslationResult
+from app.models import Component, TranslationResult, RiskLevel
+
+MAX_RETRIES = 3
+RETRY_BACKOFF = (1, 3, 6)  # seconds between retries
 
 _client: genai.Client | None = None
 
@@ -20,36 +26,32 @@ FALLBACK_RESULT = TranslationResult(
     confidence=0.0,
     confidence_reasoning="Agent failed to produce a parseable response.",
     incompatible_elements=[],
-    notes="Gemini response could not be parsed after retry.",
+    notes="Gemini response could not be parsed.",
 )
 
-JSON_OUTPUT_INSTRUCTIONS = """
-## Response format
-You MUST respond with ONLY a single raw JSON object. No markdown fences, no preamble, no explanation.
-The JSON object must have exactly these fields:
 
-{
-  "translated_script": "<the full translated code as a single string>",
-  "confidence": <float between 0.0 and 1.0>,
-  "confidence_reasoning": "<1-2 sentences explaining what drove the confidence score up or down, referencing specific constructs from the source script and whether retrieved RAG context was sufficient>",
-  "incompatible_elements": ["<specific DC construct> — <why incompatible and what replacement was used>"],
-  "notes": "<any additional migration notes>"
-}
+class TranslationResultSchema(TypedDict):
+    translated_script: str
+    confidence: float
+    confidence_reasoning: str
+    incompatible_elements: list[str]
+    notes: str
 
-Rules for each field:
-- translated_script: The complete translated code. Must be valid and runnable.
-- confidence: Float between 0.0 and 1.0.
-  - Above 0.80 = confident the translation is correct and runnable
-  - 0.50 to 0.80 = uncertain, manual review recommended
-  - Below 0.50 = could not reliably translate, high risk
-- confidence_reasoning: One or two sentences max. Must reference specific constructs from the source script. Must mention whether retrieved context was sufficient or insufficient.
-- incompatible_elements: List of strings. Each must be specific, e.g. "ComponentAccessor.getIssueManager() — no direct Cloud equivalent, rewritten as REST call to /rest/api/3/issue". Empty list if fully translatable.
-- notes: Any additional context about the migration.
 
-Return ONLY the raw JSON object. No markdown. No explanation. No code fences.
-"""
+class ReviewResultSchema(TypedDict):
+    approved: bool
+    revised_script: str
 
-RETRY_MESSAGE = "Your previous response was not valid JSON. Return ONLY a raw JSON object. No markdown fences. No explanation. No preamble. Just the JSON object with the fields: translated_script, confidence, confidence_reasoning, incompatible_elements, notes."
+
+TRANSLATION_CONFIG = types.GenerateContentConfig(
+    response_mime_type="application/json",
+    response_schema=TranslationResultSchema,
+)
+
+REVIEW_CONFIG = types.GenerateContentConfig(
+    response_mime_type="application/json",
+    response_schema=ReviewResultSchema,
+)
 
 
 def _format_rag_context(chunks: list[dict]) -> str:
@@ -60,36 +62,6 @@ def _format_rag_context(chunks: list[dict]) -> str:
         lines.append(chunk["content"])
         lines.append("")
     return "\n".join(lines)
-
-
-def _extract_json(text: str) -> dict:
-    """Extract a JSON object from Gemini's response.
-
-    Handles three common Gemini output patterns:
-    - Raw JSON (ideal case)
-    - JSON wrapped in ```json ... ``` fences
-    - JSON preceded/followed by explanation text (preamble or postamble)
-    """
-    cleaned = text.strip()
-
-    # Strip outermost markdown fences if present
-    cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned)
-    cleaned = re.sub(r'\n?```\s*$', '', cleaned)
-    cleaned = cleaned.strip()
-
-    # Try direct parse first (fast path)
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        pass
-
-    # Gemini returned preamble/postamble around the JSON — find the object boundaries
-    start = cleaned.find('{')
-    end = cleaned.rfind('}')
-    if start != -1 and end != -1 and end > start:
-        return json.loads(cleaned[start:end + 1])
-
-    raise json.JSONDecodeError("No JSON object found in response", cleaned, 0)
 
 
 class BaseAgent:
@@ -154,34 +126,35 @@ class BaseAgent:
 
         return prompt
 
-    def _call_gemini(self, prompt: str) -> str:
-        """Call Gemini and return the raw response text."""
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=prompt,
-        )
-        return response.text
+    def _call_gemini(self, prompt: str, config: types.GenerateContentConfig = TRANSLATION_CONFIG) -> dict:
+        """Call Gemini with structured output, retrying on transient errors."""
+        last_exc = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=prompt,
+                    config=config,
+                )
+                return json.loads(response.text)
+            except Exception as e:
+                last_exc = e
+                err_str = str(e)
+                is_transient = any(k in err_str for k in ("503", "429", "UNAVAILABLE", "overloaded", "ReadError", "10053", "10054"))
+                if not is_transient or attempt == MAX_RETRIES - 1:
+                    raise
+                wait = RETRY_BACKOFF[attempt]
+                print(f"[Gemini] Transient error (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {wait}s: {type(e).__name__}")
+                time.sleep(wait)
+        raise last_exc  # unreachable, but satisfies type checker
 
     def _parse_translation(self, component: Component, prompt: str) -> TranslationResult:
-        """Call Gemini, parse JSON response, retry once on failure, fallback on second failure."""
+        """Call Gemini with structured JSON output, fallback on API/network failure."""
         try:
-            raw = self._call_gemini(prompt)
-            parsed = _extract_json(raw)
-            return TranslationResult(**parsed)
-        except (json.JSONDecodeError, ValueError) as e:
-            print(f"[Agent] {component.component_id} parse attempt 1 failed ({type(e).__name__}): {e}")
-        except Exception as e:
-            print(f"[Agent] {component.component_id} attempt 1 error ({type(e).__name__}): {e}")
-            return FALLBACK_RESULT
-
-        # Retry with reinforcement message
-        try:
-            retry_prompt = prompt + "\n\n" + RETRY_MESSAGE
-            raw = self._call_gemini(retry_prompt)
-            parsed = _extract_json(raw)
+            parsed = self._call_gemini(prompt)
             return TranslationResult(**parsed)
         except Exception as e:
-            print(f"[Agent] {component.component_id} attempt 2 error ({type(e).__name__}): {e}")
+            print(f"[Agent] {component.component_id} error ({type(e).__name__}): {e}")
             return FALLBACK_RESULT
 
     def _check_translation_memory(self, component: Component) -> TranslationResult | None:
@@ -234,6 +207,51 @@ class BaseAgent:
         except Exception:
             pass
 
+    def _review_translation(self, component: Component, result: TranslationResult) -> TranslationResult:
+        """Self-critique reviewer for high-risk, low-confidence translations.
+
+        Only fires when BOTH conditions are true:
+        - result.confidence < 0.80 OR len(result.incompatible_elements) > 0
+        - component.compatibility.risk_level is high or critical
+
+        Returns the (possibly revised) TranslationResult.
+        """
+        needs_review = result.confidence < 0.80 or len(result.incompatible_elements) > 0
+        is_high_risk = component.compatibility.risk_level in (RiskLevel.high, RiskLevel.critical)
+
+        if not (needs_review and is_high_risk):
+            return result
+
+        review_prompt = f"""Review this Jira DC-to-Cloud migration translation for correctness.
+
+## Original script
+{component.original_script or "N/A"}
+
+## Translated script
+{result.translated_script}
+
+## Checklist
+- DC-only APIs (ComponentAccessor, IssueManager, etc.) are fully replaced
+- accountId is used instead of username/userkey
+- REST API endpoints use v3 Cloud paths
+- No leftover DC imports or classes
+
+If the translation is correct, set approved=true and copy the translated script unchanged into revised_script.
+If there are issues, set approved=false and provide the corrected script in revised_script."""
+
+        try:
+            parsed = self._call_gemini(review_prompt, config=REVIEW_CONFIG)
+            if not parsed.get("approved", True) and parsed.get("revised_script", "").strip():
+                print(f"[Reviewer] Corrected '{component.component_id}'")
+                result.translated_script = parsed["revised_script"]
+                result.confidence = max(0.0, result.confidence - 0.05)
+                result.notes = (result.notes + " Revised by self-critique reviewer.").strip()
+                result.reviewer_corrected = True
+        except Exception as e:
+            print(f"[Reviewer] {component.component_id} review failed ({type(e).__name__}): {e}")
+
+        return result
+
     def translate(self, component: Component) -> dict:
         # Step 1 — Check translation memory cache
         cached = self._check_translation_memory(component)
@@ -259,6 +277,7 @@ class BaseAgent:
                 "served_from_cache": True,
                 "cache_similarity": cached.cache_similarity,
                 "cache_warnings": cached.cache_warnings,
+                "reviewer_corrected": False,
             }
 
         # Step 2 — RAG query + Gemini translation
@@ -266,8 +285,11 @@ class BaseAgent:
         prompt = self._inject_rag_context(prompt, component)
 
         result = self._parse_translation(component, prompt)
-        translated_code = result.translated_script
 
+        # Step 3 — Self-critique review (high-risk + low-confidence/incompatible only)
+        result = self._review_translation(component, result)
+
+        translated_code = result.translated_script
         status = "failed" if not translated_code or result.confidence == 0.0 else "success"
 
         component_result = {
@@ -290,10 +312,16 @@ class BaseAgent:
             "served_from_cache": False,
             "cache_similarity": None,
             "cache_warnings": [],
+            "reviewer_corrected": result.reviewer_corrected,
         }
 
-        # Step 3 — Store in translation memory if high confidence
+        # Step 4 — Store in translation memory if high confidence
         if status == "success" and result.confidence >= 0.85:
             self._store_translation(component_result, result)
 
         return component_result
+
+    async def async_translate(self, component: Component) -> dict:
+        """Async wrapper that runs translate() in a thread pool."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.translate, component)

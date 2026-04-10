@@ -16,9 +16,9 @@ def health():
 
 
 @router.post("/migrate")
-def migrate(report: AnalysisReport):
+async def migrate(report: AnalysisReport):
     try:
-        results = route_components(report)
+        results = await route_components(report)
         valid, flagged = validate_results(results)
         zip_path = package_results(valid, flagged, report.analysis_id)
         return FileResponse(
@@ -27,7 +27,8 @@ def migrate(report: AnalysisReport):
             filename=f"migration_{report.analysis_id}.zip"
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[Migrate] Error: {e}")
+        raise HTTPException(status_code=500, detail="Migration failed. Check server logs for details.")
 
 
 @router.post("/migrate/stream")
@@ -50,12 +51,18 @@ def migrate_stream(report: AnalysisReport):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+ALLOWED_OUTPUT_DIR = os.path.abspath("app/outputs")
+
+
 @router.get("/download")
 def download_zip(path: str):
-    if not os.path.exists(path):
+    abs_path = os.path.abspath(path)
+    if not abs_path.startswith(ALLOWED_OUTPUT_DIR):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not os.path.exists(abs_path):
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(
-        path=path,
+        path=abs_path,
         media_type="application/zip",
-        filename=os.path.basename(path)
+        filename=os.path.basename(abs_path)
     )

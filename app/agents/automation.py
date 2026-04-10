@@ -1,4 +1,4 @@
-from app.agents.base_agent import BaseAgent, JSON_OUTPUT_INSTRUCTIONS
+from app.agents.base_agent import BaseAgent
 from app.models import Component
 
 class AutomationAgent(BaseAgent):
@@ -27,7 +27,5 @@ Your task is to translate a Jira Data Center automation component to Jira Cloud 
 - Translate this to a valid Jira Cloud Automation rule in JSON format
 - Use Jira Cloud Automation trigger/condition/action structure
 - Replace any DC-specific triggers or actions with their Cloud equivalents
-- The translated_script field in your JSON response must contain valid JSON representing the Jira Cloud Automation rule
-
-{JSON_OUTPUT_INSTRUCTIONS}
+- The translated_script field must contain valid JSON representing the Jira Cloud Automation rule
 """

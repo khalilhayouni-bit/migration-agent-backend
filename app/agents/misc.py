@@ -1,4 +1,4 @@
-from app.agents.base_agent import BaseAgent, JSON_OUTPUT_INSTRUCTIONS
+from app.agents.base_agent import BaseAgent
 from app.models import Component
 
 class MiscAgent(BaseAgent):
@@ -28,6 +28,4 @@ You are an expert Jira migration engineer reviewing an unsupported or unknown co
   2. What manual steps are needed
   3. Any Cloud alternatives available
 - Set confidence low since this is a fallback/unsupported component
-
-{JSON_OUTPUT_INSTRUCTIONS}
 """

@@ -1,4 +1,4 @@
-from app.agents.base_agent import BaseAgent, JSON_OUTPUT_INSTRUCTIONS
+from app.agents.base_agent import BaseAgent
 from app.models import Component
 
 class ScriptRunnerAgent(BaseAgent):
@@ -29,7 +29,5 @@ Your task is to translate a Jira Data Center ScriptRunner script to a Jira Cloud
 - Use accountId instead of username or userkey for user identification
 - Use Jira Cloud REST API v3 endpoints where needed
 - If a feature is completely unsupported in Cloud, add a comment explaining why and suggest an alternative
-- The translated_script field in your JSON response must contain valid Groovy code
-
-{JSON_OUTPUT_INSTRUCTIONS}
+- The translated_script field must contain valid Groovy code
 """

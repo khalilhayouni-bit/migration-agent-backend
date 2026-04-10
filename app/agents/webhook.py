@@ -1,4 +1,4 @@
-from app.agents.base_agent import BaseAgent, JSON_OUTPUT_INSTRUCTIONS
+from app.agents.base_agent import BaseAgent
 from app.models import Component
 
 class WebhookAgent(BaseAgent):
@@ -27,7 +27,5 @@ Your task is to translate a Jira Data Center webhook to a Jira Cloud compatible 
 - Rewrite this as a Python webhook handler compatible with Jira Cloud
 - Use Jira Cloud REST API v3 for any API calls
 - Use accountId for user references
-- The translated_script field in your JSON response must contain valid Python code
-
-{JSON_OUTPUT_INSTRUCTIONS}
+- The translated_script field must contain valid Python code
 """
