@@ -1,0 +1,10 @@
+venv/
+chroma_db/
+app/outputs/
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.log
+.claude/
+auth.db

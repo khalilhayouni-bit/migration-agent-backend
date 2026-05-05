@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import migration
+from app.routers import migration, auth, review
 
 app = FastAPI(
     title="Jira Migration Backend",
@@ -15,7 +15,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api/v1")
 app.include_router(migration.router, prefix="/api/v1")
+app.include_router(review.router, prefix="/api/v1")
 
 @app.get("/")
 def health_check():

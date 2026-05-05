@@ -218,14 +218,15 @@ class TranslationMemory:
             warnings=warnings,
         )
 
-    def store(self, component: dict, result: "TranslationResult") -> None:
+    def store(self, component: dict, result: "TranslationResult", force: bool = False) -> None:
         """Store a high-confidence translation in the cache.
 
-        Only stores if confidence >= 0.85 and status is 'success'.
+        Only stores if confidence >= 0.85 and status is 'success',
+        unless force=True (admin-approved).
         Idempotent via MD5 hash of the original script as document ID.
         """
         # Avoid circular import — TranslationResult type used for annotation only
-        if result.confidence < 0.85:
+        if not force and result.confidence < 0.85:
             return
 
         original_script = component.get("original_script", "")

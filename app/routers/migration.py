@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 from app.models import AnalysisReport
 from app.services.router import route_components, route_components_stream
 from app.services.validator import validate_results
 from app.services.packager import package_results
+from app.auth.security import get_current_user
 import json
 import os
 
@@ -16,7 +17,7 @@ def health():
 
 
 @router.post("/migrate")
-async def migrate(report: AnalysisReport):
+async def migrate(report: AnalysisReport, _user: dict = Depends(get_current_user)):
     try:
         results = await route_components(report)
         valid, flagged = validate_results(results)
@@ -32,7 +33,7 @@ async def migrate(report: AnalysisReport):
 
 
 @router.post("/migrate/stream")
-def migrate_stream(report: AnalysisReport):
+def migrate_stream(report: AnalysisReport, _user: dict = Depends(get_current_user)):
     def event_generator():
         results = []
 
@@ -55,7 +56,7 @@ ALLOWED_OUTPUT_DIR = os.path.abspath("app/outputs")
 
 
 @router.get("/download")
-def download_zip(path: str):
+def download_zip(path: str, _user: dict = Depends(get_current_user)):
     abs_path = os.path.abspath(path)
     if not abs_path.startswith(ALLOWED_OUTPUT_DIR):
         raise HTTPException(status_code=403, detail="Access denied")

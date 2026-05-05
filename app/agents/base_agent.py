@@ -1,4 +1,5 @@
 import json
+import re
 import time
 import asyncio
 from typing import TypedDict
@@ -6,9 +7,10 @@ from google import genai
 from google.genai import types
 from app.config import settings
 from app.models import Component, TranslationResult, RiskLevel
+from app.services.rate_limiter import sync_acquire
 
 MAX_RETRIES = 3
-RETRY_BACKOFF = (1, 3, 6)  # seconds between retries
+DEFAULT_RETRY_BACKOFF = (1, 3, 6)  # fallback if no retryDelay in 429 response
 
 _client: genai.Client | None = None
 
@@ -126,10 +128,31 @@ class BaseAgent:
 
         return prompt
 
+    @staticmethod
+    def _parse_retry_delay(exc: Exception) -> float | None:
+        """Extract retryDelay seconds from a 429 error response.
+
+        The Gemini API returns retryDelay in error details as a protobuf
+        Duration string like '37s' or metadata. We parse it from the
+        string representation of the error.
+        """
+        err_str = str(exc)
+        # Look for patterns like "retryDelay": "37s" or retry_delay { seconds: 37 }
+        match = re.search(r'retry[_-]?[Dd]elay["\s:]*["{]?\s*(\d+)s?', err_str)
+        if match:
+            return float(match.group(1))
+        # Also check for seconds as a standalone number after "seconds:"
+        match = re.search(r'seconds:\s*(\d+)', err_str)
+        if match:
+            return float(match.group(1))
+        return None
+
     def _call_gemini(self, prompt: str, config: types.GenerateContentConfig = TRANSLATION_CONFIG) -> dict:
-        """Call Gemini with structured output, retrying on transient errors."""
+        """Call Gemini with structured output, respecting rate limits and retrying on transient errors."""
         last_exc = None
         for attempt in range(MAX_RETRIES):
+            # Wait for a rate-limit slot before each attempt
+            sync_acquire()
             try:
                 response = self.client.models.generate_content(
                     model=self.model,
@@ -143,7 +166,17 @@ class BaseAgent:
                 is_transient = any(k in err_str for k in ("503", "429", "UNAVAILABLE", "overloaded", "ReadError", "10053", "10054"))
                 if not is_transient or attempt == MAX_RETRIES - 1:
                     raise
-                wait = RETRY_BACKOFF[attempt]
+
+                # For 429 errors, respect the server's retryDelay hint
+                if "429" in err_str:
+                    server_delay = self._parse_retry_delay(e)
+                    if server_delay is not None:
+                        wait = server_delay
+                    else:
+                        wait = DEFAULT_RETRY_BACKOFF[attempt]
+                else:
+                    wait = DEFAULT_RETRY_BACKOFF[attempt]
+
                 print(f"[Gemini] Transient error (attempt {attempt + 1}/{MAX_RETRIES}), retrying in {wait}s: {type(e).__name__}")
                 time.sleep(wait)
         raise last_exc  # unreachable, but satisfies type checker

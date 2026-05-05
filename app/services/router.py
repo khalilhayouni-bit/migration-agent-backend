@@ -7,6 +7,7 @@ from app.agents.jsu import JSUAgent
 from app.agents.automation import AutomationAgent
 from app.agents.misc import MiscAgent
 from app.agents.webhook import WebhookAgent
+from app.services import dedup
 
 AGENT_MAP = {
     Plugin.scriptrunner: ScriptRunnerAgent(),
@@ -19,12 +20,31 @@ AGENT_MAP = {
 _misc_fallback = MiscAgent()
 
 
+async def _translate_with_dedup(agent, component) -> dict:
+    """Translate a component with deduplication — if the same component_id is
+    already in-flight, await the existing result instead of starting a duplicate."""
+    cid = component.component_id
+    is_new, future = await dedup.get_or_register(cid)
+
+    if not is_new:
+        print(f"[Router] Dedup: '{cid}' already in-flight, waiting for existing result")
+        return await future
+
+    try:
+        result = await agent.async_translate(component)
+        await dedup.complete(cid, result)
+        return result
+    except Exception as exc:
+        await dedup.fail(cid, exc)
+        raise
+
+
 async def route_components(report: AnalysisReport) -> list[dict]:
     tasks = []
     for component in report.components:
         agent = AGENT_MAP.get(component.plugin, _misc_fallback)
         print(f"[Router] Queuing component '{component.component_id}' -> {component.plugin.value}")
-        tasks.append(agent.async_translate(component))
+        tasks.append(_translate_with_dedup(agent, component))
 
     results = await asyncio.gather(*tasks)
     return list(results)
