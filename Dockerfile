@@ -22,12 +22,12 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright Chromium browser
-RUN playwright install chromium
+# Install Playwright and its Chromium browser separately
+RUN pip install --no-cache-dir playwright && playwright install chromium
 
 COPY . .
 
-# Exclude venv and local state from the image
+# Remove Windows-only local state
 RUN rm -rf venv chroma_db app/outputs
 
 EXPOSE 8000
