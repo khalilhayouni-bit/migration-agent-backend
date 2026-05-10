@@ -9,6 +9,7 @@ import hashlib
 import json
 import re
 import keyword
+import threading
 from datetime import datetime, timezone
 
 from pydantic import BaseModel
@@ -158,6 +159,7 @@ class TranslationMemory:
             metadata={"hnsw:space": "cosine"},
         )
         self._embedder = GeminiEmbedder()
+        self._lock = threading.Lock()
 
     def query(self, source_script: str) -> CacheResult | None:
         """Query translation memory with three-layer validation.
@@ -234,24 +236,26 @@ class TranslationMemory:
             return
 
         doc_id = _md5(original_script)
+        # Embed outside the lock — embedding is thread-safe and slow
         embedding = self._embedder.embed(original_script)
 
-        self._collection.upsert(
-            ids=[doc_id],
-            embeddings=[embedding],
-            documents=[original_script],
-            metadatas=[{
-                "component_id": component.get("component_id", ""),
-                "component_type": component.get("component_type", ""),
-                "plugin": component.get("plugin", ""),
-                "translated_script": result.translated_script,
-                "confidence": result.confidence,
-                "confidence_reasoning": result.confidence_reasoning,
-                "incompatible_elements": json.dumps(result.incompatible_elements),
-                "notes": result.notes,
-                "stored_at": datetime.now(timezone.utc).isoformat(),
-            }],
-        )
+        with self._lock:
+            self._collection.upsert(
+                ids=[doc_id],
+                embeddings=[embedding],
+                documents=[original_script],
+                metadatas=[{
+                    "component_id": component.get("component_id", ""),
+                    "component_type": component.get("component_type", ""),
+                    "plugin": component.get("plugin", ""),
+                    "translated_script": result.translated_script,
+                    "confidence": result.confidence,
+                    "confidence_reasoning": result.confidence_reasoning,
+                    "incompatible_elements": json.dumps(result.incompatible_elements),
+                    "notes": result.notes,
+                    "stored_at": datetime.now(timezone.utc).isoformat(),
+                }],
+            )
 
     def count(self) -> int:
         """Return the number of stored translations."""

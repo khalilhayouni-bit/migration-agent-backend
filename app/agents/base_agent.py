@@ -224,21 +224,24 @@ class BaseAgent:
                 cache_similarity=hit.similarity,
                 cache_warnings=hit.warnings,
             )
-        except Exception:
+        except Exception as e:
+            print(f"[Cache] Query FAILED for '{component.component_id}': {type(e).__name__}: {e}")
             return None
 
     def _store_translation(self, component_result: dict, result: TranslationResult) -> None:
-        """Store a high-confidence translation in memory. Fails silently."""
+        """Store a high-confidence translation in memory."""
         try:
             from rag import get_translation_memory
 
             memory = get_translation_memory()
             if memory is None:
+                print(f"[Cache] Store skipped — TranslationMemory unavailable")
                 return
 
             memory.store(component_result, result)
-        except Exception:
-            pass
+            print(f"[Cache] Stored '{component_result.get('component_id')}' (confidence={result.confidence:.2f})")
+        except Exception as e:
+            print(f"[Cache] Store FAILED for '{component_result.get('component_id')}': {type(e).__name__}: {e}")
 
     def _review_translation(self, component: Component, result: TranslationResult) -> TranslationResult:
         """Self-critique reviewer for high-risk, low-confidence translations.
