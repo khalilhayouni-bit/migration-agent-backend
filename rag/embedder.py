@@ -36,6 +36,7 @@ class GeminiEmbedder:
 
     def embed_batch(self, texts: list[str], batch_size: int = 50) -> list[list[float]]:
         """Embed multiple texts in batches, returning vectors in input order."""
+        import time
         all_embeddings: list[list[float]] = []
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
@@ -44,4 +45,6 @@ class GeminiEmbedder:
                 contents=batch,
             )
             all_embeddings.extend(emb.values for emb in result.embeddings)
+            if i + batch_size < len(texts):
+                time.sleep(1.5)
         return all_embeddings

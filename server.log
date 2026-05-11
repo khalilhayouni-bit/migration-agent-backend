@@ -1,0 +1,9 @@
+INFO:     Started server process [17672]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:57520 - "GET /api/v1/health HTTP/1.1" 200 OK
+[Router] Processing component 'SR-001' -> ScriptRunner
+[Cache] HIT for 'SR-001' (similarity=0.9973)
+[Packager] ZIP created: app/outputs/migration_smoke_20260406_143240.zip
+INFO:     127.0.0.1:59879 - "POST /api/v1/migrate HTTP/1.1" 200 OK

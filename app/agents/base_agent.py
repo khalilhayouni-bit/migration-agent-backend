@@ -241,7 +241,9 @@ class BaseAgent:
             memory.store(component_result, result)
             print(f"[Cache] Stored '{component_result.get('component_id')}' (confidence={result.confidence:.2f})")
         except Exception as e:
+            import traceback
             print(f"[Cache] Store FAILED for '{component_result.get('component_id')}': {type(e).__name__}: {e}")
+            traceback.print_exc()
 
     def _review_translation(self, component: Component, result: TranslationResult) -> TranslationResult:
         """Self-critique reviewer for high-risk, low-confidence translations.
@@ -352,6 +354,7 @@ If there are issues, set approved=false and provide the corrected script in revi
         }
 
         # Step 4 — Store in translation memory if high confidence
+        print(f"[Cache] Pre-store check: status={status} confidence={result.confidence}")
         if status == "success" and result.confidence >= 0.85:
             self._store_translation(component_result, result)
 
