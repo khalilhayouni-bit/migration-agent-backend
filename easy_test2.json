@@ -1,0 +1,30 @@
+{
+  "analysis_id": "review-test-002",
+  "source_environment": "Jira Data Center",
+  "target_environment": "Jira Cloud",
+  "analysis_date": "2026-05-12",
+  "components": [
+    {
+      "component_id": "webhook-001",
+      "component_type": "listener",
+      "plugin": "Webhook",
+      "location": { "workflow": "Deploy Pipeline", "transition": "Deploy" },
+      "features_detected": ["http_post", "json_payload"],
+      "compatibility": { "cloud_status": "compatible", "risk_level": "low" },
+      "recommended_action": "Migrate to Jira Cloud outgoing webhook",
+      "report_text": "Simple outgoing webhook, fully migratable.",
+      "original_script": "def payload = [issueKey: issue.key, status: issue.status.name]\nnew URL('https://hooks.example.com/notify').openConnection().with { setDoOutput(true); outputStream << groovy.json.JsonOutput.toJson(payload) }"
+    },
+    {
+      "component_id": "auto-001",
+      "component_type": "post_function",
+      "plugin": "native",
+      "location": { "workflow": "HR Workflow", "transition": "Approve" },
+      "features_detected": ["field_update", "automation_trigger"],
+      "compatibility": { "cloud_status": "compatible", "risk_level": "low" },
+      "recommended_action": "Migrate to Jira Cloud Automation rule",
+      "report_text": "Native automation rule, fully compatible.",
+      "original_script": "{\"trigger\": \"transition\", \"actions\": [{\"type\": \"edit-issue\", \"fields\": {\"status\": \"Approved\"}}]}"
+    }
+  ]
+}

@@ -1,11 +1,51 @@
 import os
 import zipfile
 import json
+import time
 from datetime import datetime
 
 OUTPUT_DIR = "app/outputs"
+ZIP_RETENTION_DAYS = 7
+
+
+def cleanup_old_zips(retention_days: int = ZIP_RETENTION_DAYS) -> int:
+    """Delete migration ZIPs older than `retention_days` from OUTPUT_DIR.
+
+    Returns the number of files deleted. Silent on individual failures so a
+    locked/in-use file does not break the migration request that triggered it.
+    """
+    if not os.path.isdir(OUTPUT_DIR):
+        return 0
+
+    cutoff = time.time() - (retention_days * 86400)
+    deleted = 0
+    for name in os.listdir(OUTPUT_DIR):
+        if not name.endswith(".zip"):
+            continue
+        path = os.path.join(OUTPUT_DIR, name)
+        try:
+            if os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                deleted += 1
+        except OSError:
+            continue
+    if deleted:
+        print(f"[Packager] Cleaned up {deleted} old ZIP(s) older than {retention_days} day(s)")
+    return deleted
 
 def get_file_extension(result: dict) -> str:
+    """Return the file extension for a translated component.
+
+    Prefers the `output_ext` field already computed by the agent
+    (BaseAgent._get_output_ext) so the two stay in sync. Falls back to a
+    plugin-based mapping only if `output_ext` is missing or the sentinel
+    "flagged" value (which signals the component should not be written as
+    a normal translated file).
+    """
+    ext = result.get("output_ext")
+    if ext and ext != "flagged" and ext.startswith("."):
+        return ext
+
     plugin = result.get("plugin", "").lower()
     if plugin in ["scriptrunner", "jsu", "misc"]:
         return ".groovy"
@@ -153,6 +193,7 @@ def generate_report_md(valid: list[dict], flagged: list[dict], analysis_id: str)
 
 def package_results(valid: list[dict], flagged: list[dict], analysis_id: str) -> str:
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    cleanup_old_zips()
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     zip_filename = f"{OUTPUT_DIR}/migration_{analysis_id}_{timestamp}.zip"

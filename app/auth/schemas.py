@@ -17,3 +17,4 @@ class UserOut(BaseModel):
     username: str
     email: str
     is_active: bool
+    role: str = "user"

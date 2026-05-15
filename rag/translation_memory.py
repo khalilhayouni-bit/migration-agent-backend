@@ -260,3 +260,81 @@ class TranslationMemory:
     def count(self) -> int:
         """Return the number of stored translations."""
         return self._collection.count()
+
+    def list_entries(self, limit: int = 50, offset: int = 0, plugin: str | None = None) -> dict:
+        """Return a paginated list of stored translations.
+
+        Args:
+            limit: max entries to return (clamped to 1..200).
+            offset: number of entries to skip.
+            plugin: optional plugin filter (e.g. "ScriptRunner", "JSU").
+
+        Returns dict: {"total": int, "limit": int, "offset": int, "entries": [...]}.
+        Each entry exposes id, original_script, and all metadata fields except
+        the raw embedding.
+        """
+        limit = max(1, min(int(limit), 200))
+        offset = max(0, int(offset))
+
+        where = {"plugin": plugin} if plugin else None
+        result = self._collection.get(
+            where=where,
+            include=["documents", "metadatas"],
+        )
+
+        ids = result.get("ids", []) or []
+        documents = result.get("documents", []) or []
+        metadatas = result.get("metadatas", []) or []
+
+        # Sort by stored_at descending so newest entries come first
+        rows = list(zip(ids, documents, metadatas))
+        rows.sort(key=lambda r: (r[2] or {}).get("stored_at", ""), reverse=True)
+
+        total = len(rows)
+        window = rows[offset:offset + limit]
+
+        entries = []
+        for entry_id, document, metadata in window:
+            metadata = metadata or {}
+            incompatible_raw = metadata.get("incompatible_elements", "[]")
+            try:
+                incompatible = json.loads(incompatible_raw)
+            except (json.JSONDecodeError, TypeError):
+                incompatible = []
+
+            entries.append({
+                "id": entry_id,
+                "component_id": metadata.get("component_id", ""),
+                "component_type": metadata.get("component_type", ""),
+                "plugin": metadata.get("plugin", ""),
+                "original_script": document,
+                "translated_script": metadata.get("translated_script", ""),
+                "confidence": float(metadata.get("confidence", 0.0)),
+                "confidence_reasoning": metadata.get("confidence_reasoning", ""),
+                "incompatible_elements": incompatible,
+                "notes": metadata.get("notes", ""),
+                "stored_at": metadata.get("stored_at", ""),
+            })
+
+        return {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "entries": entries,
+        }
+
+    def delete(self, entry_id: str) -> bool:
+        """Delete a stored translation by its ID (MD5 of original_script).
+
+        Returns True if an entry was removed, False if no match was found.
+        """
+        if not entry_id:
+            return False
+
+        existing = self._collection.get(ids=[entry_id], include=[])
+        if not existing.get("ids"):
+            return False
+
+        with self._lock:
+            self._collection.delete(ids=[entry_id])
+        return True

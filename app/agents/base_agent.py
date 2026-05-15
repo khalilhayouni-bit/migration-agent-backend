@@ -362,5 +362,5 @@ If there are issues, set approved=false and provide the corrected script in revi
 
     async def async_translate(self, component: Component) -> dict:
         """Async wrapper that runs translate() in a thread pool."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.translate, component)

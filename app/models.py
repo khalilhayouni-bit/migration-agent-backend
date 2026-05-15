@@ -1,3 +1,4 @@
+from datetime import date
 from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional
 from enum import Enum
@@ -51,7 +52,7 @@ class AnalysisReport(BaseModel):
     analysis_id: str
     source_environment: str
     target_environment: str
-    analysis_date: str
+    analysis_date: date
     components: List[Component]
 
 

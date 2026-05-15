@@ -14,6 +14,9 @@ def validate_results(results: list[dict]) -> tuple[list[dict], list[dict]]:
         if not result.get("component_id"):
             issues.append("Missing component ID")
 
+        if result.get("output_ext") == "flagged":
+            issues.append("Component marked incompatible — manual migration required")
+
         if issues:
             result["validation_issues"] = issues
             flagged.append(result)

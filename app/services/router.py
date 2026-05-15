@@ -1,4 +1,6 @@
 import asyncio
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
 from typing import Generator
 
 from app.models import AnalysisReport, Plugin
@@ -8,6 +10,8 @@ from app.agents.automation import AutomationAgent
 from app.agents.misc import MiscAgent
 from app.agents.webhook import WebhookAgent
 from app.services import dedup
+
+KEEPALIVE_INTERVAL_SECONDS = 15
 
 AGENT_MAP = {
     Plugin.scriptrunner: ScriptRunnerAgent(),
@@ -50,34 +54,48 @@ async def route_components(report: AnalysisReport) -> list[dict]:
     return list(results)
 
 def route_components_stream(report: AnalysisReport) -> Generator[dict, None, None]:
-    for index, component in enumerate(report.components):
-        agent = AGENT_MAP.get(component.plugin) or MiscAgent()
+    """Yield events as each component is translated.
 
-        print(f"[Router] Processing component '{component.component_id}' -> {component.plugin.value}")
+    A single component can take well over a minute when Gemini hits 429
+    backoff + the reviewer step also runs, so the work is dispatched to a
+    background thread and the generator yields `keepalive` events every
+    KEEPALIVE_INTERVAL_SECONDS while waiting. The SSE layer translates
+    those into comment lines that keep the HTTP connection alive without
+    showing up as data events in the browser.
+    """
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        for index, component in enumerate(report.components):
+            agent = AGENT_MAP.get(component.plugin) or MiscAgent()
 
-        # Signal to frontend: this component is now running
-        yield {
-            "type": "agent_start",
-            "index": index,
-            "component_id": component.component_id,
-            "plugin": component.plugin.value,
-        }
+            print(f"[Router] Processing component '{component.component_id}' -> {component.plugin.value}")
 
-        result = agent.translate(component)
+            yield {
+                "type": "agent_start",
+                "index": index,
+                "component_id": component.component_id,
+                "plugin": component.plugin.value,
+            }
 
-        # Signal to frontend: this component is done
-        yield {
-            "type": "agent_done",
-            "index": index,
-            "component_id": component.component_id,
-            "plugin": component.plugin.value,
-            "outputExt": result.get("output_ext", "flagged"),
-            "status": result.get("status", "done"),
-            "confidence": result.get("confidence", 0.0),
-            "confidence_label": result.get("confidence_label", "low"),
-            "confidence_reasoning": result.get("confidence_reasoning", ""),
-            "served_from_cache": result.get("served_from_cache", False),
-            "cache_similarity": result.get("cache_similarity"),
-            "cache_warnings": result.get("cache_warnings", []),
-            "result": result,  # stashed by migration.py for validation step
-        }
+            future = executor.submit(agent.translate, component)
+            while True:
+                try:
+                    result = future.result(timeout=KEEPALIVE_INTERVAL_SECONDS)
+                    break
+                except concurrent.futures.TimeoutError:
+                    yield {"type": "keepalive", "index": index, "component_id": component.component_id}
+
+            yield {
+                "type": "agent_done",
+                "index": index,
+                "component_id": component.component_id,
+                "plugin": component.plugin.value,
+                "outputExt": result.get("output_ext", "flagged"),
+                "status": result.get("status", "done"),
+                "confidence": result.get("confidence", 0.0),
+                "confidence_label": result.get("confidence_label", "low"),
+                "confidence_reasoning": result.get("confidence_reasoning", ""),
+                "served_from_cache": result.get("served_from_cache", False),
+                "cache_similarity": result.get("cache_similarity"),
+                "cache_warnings": result.get("cache_warnings", []),
+                "result": result,  # stashed by migration.py for validation step
+            }

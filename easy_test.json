@@ -1,0 +1,30 @@
+{
+  "analysis_id": "review-test-001",
+  "source_environment": "Jira Data Center",
+  "target_environment": "Jira Cloud",
+  "analysis_date": "2026-05-12",
+  "components": [
+    {
+      "component_id": "SR-review-001",
+      "component_type": "post_function",
+      "plugin": "ScriptRunner",
+      "location": { "workflow": "Bug Workflow", "transition": "Resolve" },
+      "features_detected": ["ComponentAccessor", "IssueManager"],
+      "compatibility": { "cloud_status": "partial", "risk_level": "medium" },
+      "recommended_action": "Rewrite using Jira Cloud REST API v3",
+      "report_text": "Uses ComponentAccessor.getIssueManager() which is DC-only.",
+      "original_script": "import com.atlassian.jira.component.ComponentAccessor\ndef issueManager = ComponentAccessor.getIssueManager()\ndef issue = issueManager.getIssueByCurrentKey('BUG-1')\nlog.info(issue.summary)"
+    },
+    {
+      "component_id": "SR-review-002",
+      "component_type": "workflow_validator",
+      "plugin": "ScriptRunner",
+      "location": { "workflow": "Support Workflow", "transition": "Close" },
+      "features_detected": ["ComponentAccessor", "UserManager"],
+      "compatibility": { "cloud_status": "partial", "risk_level": "low" },
+      "recommended_action": "Replace username lookup with accountId via REST API",
+      "report_text": "Uses UserManager.getUserByName() which does not exist in Cloud.",
+      "original_script": "import com.atlassian.jira.component.ComponentAccessor\ndef userManager = ComponentAccessor.getUserManager()\ndef user = userManager.getUserByName('admin')\nlog.info(user.displayName)"
+    }
+  ]
+}

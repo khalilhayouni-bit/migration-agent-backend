@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from app.auth.schemas import LoginRequest, TokenResponse, UserOut
 from app.auth.security import verify_password, hash_password, create_access_token, get_current_user
-from app.auth.database import get_db
+from app.auth.database import get_db, sync_user_role
 from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -39,10 +39,11 @@ def register(body: RegisterRequest):
         "INSERT INTO users (username, email, hashed_password) VALUES (?, ?, ?)",
         (body.username, body.email, hashed),
     )
+    role = sync_user_role(conn, body.email, settings.admin_emails_set())
     conn.commit()
     conn.close()
 
-    token = create_access_token(data={"sub": body.username})
+    token = create_access_token(data={"sub": body.username, "role": role})
     return TokenResponse(access_token=token, username=body.username)
 
 
@@ -61,7 +62,12 @@ def login(body: LoginRequest):
     if not user["is_active"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
 
-    token = create_access_token(data={"sub": user["username"]})
+    conn = get_db()
+    role = sync_user_role(conn, user["email"], settings.admin_emails_set())
+    conn.commit()
+    conn.close()
+
+    token = create_access_token(data={"sub": user["username"], "role": role})
     return TokenResponse(access_token=token, username=user["username"])
 
 
@@ -156,11 +162,13 @@ async def google_callback(code: str):
         conn.execute("UPDATE users SET google_id = ? WHERE email = ? AND google_id IS NULL", (google_id, email))
         conn.commit()
 
+    role = sync_user_role(conn, email, settings.admin_emails_set())
+    conn.commit()
     conn.close()
 
     if not user["is_active"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
 
-    jwt_token = create_access_token(data={"sub": user["username"]})
+    jwt_token = create_access_token(data={"sub": user["username"], "role": role})
     redirect_url = f"{settings.frontend_origin}/auth/callback?token={jwt_token}&username={user['username']}"
     return RedirectResponse(url=redirect_url)

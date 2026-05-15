@@ -40,7 +40,10 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
     conn = get_db()
-    user = conn.execute("SELECT id, username, email, is_active FROM users WHERE username = ?", (username,)).fetchone()
+    user = conn.execute(
+        "SELECT id, username, email, is_active, role FROM users WHERE username = ?",
+        (username,),
+    ).fetchone()
     conn.close()
 
     if user is None:
@@ -49,3 +52,12 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
 
     return dict(user)
+
+
+def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    """Allow only users with the 'admin' role. Role is read from the DB
+    (source of truth), so demoting an admin takes effect immediately on
+    their next request — no need to wait for token expiry."""
+    if current_user.get("role") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required")
+    return current_user
